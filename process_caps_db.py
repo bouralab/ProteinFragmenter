@@ -33,7 +33,7 @@ def process_table(info, columns, dtypes, name, chunksize=100):
         rows.append(values)
     print(len(rows), len(columns), len(rows[0]))
     df = pd.DataFrame(rows, columns=columns)
-    df.to_hdf("CAPSDB.h5", name, mode="a", table=True, format="table", complib="bzip2", complevel=9, min_itemsize=1024)
+    df.to_hdf("CAPSDB.h5", name, mode="a", append=True, table=True, format="table", complib="bzip2", complevel=9, min_itemsize=1024)
     # print(len(rows))
     # print(rows)
     # assert 0
