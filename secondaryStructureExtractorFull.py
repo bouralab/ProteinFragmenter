@@ -14,11 +14,16 @@ get dataset of phi/psi angles:
 >>> PhiPsi.show(10)
 
 '''
-
+from pyspark import SparkContext
 from mmtfPyspark.ml import pythonRDDToDataset
 from mmtfPyspark.utils import DsspSecondaryStructure
 from pyspark.sql import Row
 import numpy as np
+import itertools as it
+from pyspark.sql import DataFrame
+from functools import reduce
+
+from Bio.PDB.Polypeptide import three_to_index, aa3
 
 def get_dihedral(p0, p1, p2, p3):
     """Praxeolitic formula
@@ -59,13 +64,17 @@ def get_dataset(structure):
     dataset
        dataset with sequence and secondary structure assignments
     '''
-
-    rows = structure.map(
+    print("RUNNING")
+    rows = structure.flatMap(
         lambda x: _get_phi_psi(x))  # Map or flatMap
-
+    print("MAPPED")
     # convert to dataset
-    colNames = ["structureChainId", "resi", "resn", "phi", "psi"]
+    colNames = ["pdbId", "chain", "resi", "resn", "phi", "psi"]+["is"+aa for aa in aa3]
+    #sc = SparkContext.getOrCreate()
 
+    #newdf = it.chain.from_iterable(rows)
+    #allrows = sc.union(rows)
+    #return reduce(DataFrame.unionAll, rows.collect())
     return pythonRDDToDataset.get_dataset(rows, colNames)
 
 
@@ -83,15 +92,17 @@ def get_python_rdd(structure):
 def _get_phi_psi(t):
     '''Get factions of alpha, beta and coil within a chain
     '''
-
+    print("RUNNING", t[0])
     key = t[0]
     structure = t[1]
     if structure.num_chains != 1:
         raise Exception(
             "This method can only be applied to single polyer chain.")
 
-    dsspQ8, dsspQ3 = '', ''
+    _pdbId, _chainId = key.split(".")
+    _pdbId = _pdbId.lower()
 
+    chainIndex = 0
     groupIndex = 0
     atomIndex = 0
     torsion = []
@@ -101,10 +112,6 @@ def _get_phi_psi(t):
             chainName = structure.chain_name_list[chainIndex]
             chainId = structure.chain_id_list[chainIndex]
             groups = structure.groups_per_chain[chainIndex]
-
-            entityType = structure.entity_list[chainToEntityIndex[chainIndex]]["type"]
-
-            #if not entityType == "polymer": continue
 
             prev_coords = None
             coords = None
@@ -123,34 +130,42 @@ def _get_phi_psi(t):
                         structure.y_coord_list[atomIndex+i],
                         structure.z_coord_list[atomIndex+i])) \
                             for i, name in enumerate(structure.group_list[groupType]["atomNameList"])}
-                    )}
                 atomIndex += len(structure.group_list[groupType]["atomNameList"])
 
-                next_group_type = structure.group_type_list[groupIndex+1]
-                next_coords = {name.strip(): np.array((
-                    structure.x_coord_list[atomIndex+i],
-                    structure.y_coord_list[atomIndex+i],
-                    structure.z_coord_list[atomIndex+i])) \
-                        for i, name in enumerate(structure.group_list[next_group_type]["atomNameList"])}
-                )} if groupIndex < structure.num_groups-1 else None
+                try:
+                    next_group_type = structure.group_type_list[groupIndex+1]
+                    next_coords = {name.strip(): np.array((
+                        structure.x_coord_list[atomIndex+i],
+                        structure.y_coord_list[atomIndex+i],
+                        structure.z_coord_list[atomIndex+i])) \
+                            for i, name in enumerate(structure.group_list[next_group_type]["atomNameList"])} \
+                    if groupIndex < structure.num_groups-1 else None
+                except IndexError:
+                    next_coords = None
 
                 try:
-                    phi = get_dihedral(coords["C"], coords["CA"], coords["N"], next_coords["C"]) if next_coords else None
+                    phi = get_dihedral(prev_coords["C"], coords["N"], coords["CA"], coords["C"]) if prev_coords else np.NaN
                 except KeyError:
-                    phi = None
+                    phi = np.NaN
                 try:
-                    psi = get_dihedral(prev_coords["N"], coords["C"], coords["CA"], coords["N"]) if prev_coords else None
+                    psi = get_dihedral(coords["N"], coords["CA"], coords["C"], next_coords["N"]) if next_coords else np.NaN
                 except KeyError:
-                    psi = None
+                    psi = np.NaN
 
                 prev_coords = coords
-                next_coords = coords
 
-                torsion.append(Row([key, seqIndex, groupName, phi, psi])
+                feats = [_pdbId, _chainId, int(seqIndex), str(groupName), float(phi), float(psi)]+get_residue(groupName)
                 groupIndex += 1
+            chainIndex += 1
 
-    sc = SparkContext.getOrCreate()
-    data = sc.parallelize(torsion)
-    colNames = ["structureChainId", "resi", "resn", "phi", "psi"]
+    return torsion
 
-    return pythonRDDToDataset.get_dataset(data, colNames)
+one_hot = np.eye(20)
+def get_residue(res):
+    if res == "MSE": res="MET"
+    try:
+        index = three_to_index(res)
+        mask = [int(i==index) for i in range(20)]
+        return mask
+    except (KeyError, IndexError):
+        return [0]*20

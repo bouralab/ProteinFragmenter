@@ -72,7 +72,7 @@ def _get_free_sasa(t, parameters=None, classifier=None, options=None):
     freesasaStructure = freesasa.Structure()
     if (classifier is None):
         classifier = freesasa.Classifier()
-    optbitfield = freesasa.Structure._get_structure_options(options or freesasa.Structure.defaultOptions))
+    optbitfield = freesasa.Structure._get_structure_options(options or freesasa.Structure.defaultOptions)
 
     for i in range(0, structure.num_models):
         print("model: " + str(i+1))
