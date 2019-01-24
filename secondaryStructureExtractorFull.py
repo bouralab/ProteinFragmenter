@@ -69,7 +69,7 @@ def get_dataset(structure):
         lambda x: _get_phi_psi(x))  # Map or flatMap
     print("MAPPED")
     # convert to dataset
-    colNames = ["pdbId", "chain", "resi", "resn", "phi", "psi"]+["is"+aa for aa in aa3]
+    colNames = ["pdbId", "chain", "resi", "resn", "phi", "psi"]#+["is"+aa for aa in aa3]
     #sc = SparkContext.getOrCreate()
 
     #newdf = it.chain.from_iterable(rows)
@@ -154,7 +154,8 @@ def _get_phi_psi(t):
 
                 prev_coords = coords
 
-                feats = [_pdbId, _chainId, int(seqIndex), str(groupName), float(phi), float(psi)]+get_residue(groupName)
+                feats = [_pdbId, _chainId, int(seqIndex), str(groupName), float(phi), float(psi)]#+get_residue(groupName)
+                torsion.append(feats)
                 groupIndex += 1
             chainIndex += 1
 
