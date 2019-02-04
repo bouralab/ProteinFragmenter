@@ -16,7 +16,7 @@ get dataset of phi/psi angles:
 '''
 from pyspark import SparkContext
 from mmtfPyspark.ml import pythonRDDToDataset
-from mmtfPyspark.utils import DsspSecondaryStructure
+from mmtfPyspark.utils import DsspSecondaryStructure, mmtfStructure
 from pyspark.sql import Row
 import numpy as np
 import itertools as it
@@ -90,47 +90,86 @@ def get_python_rdd(structure):
 
 
 def _get_phi_psi(t):
-    '''Get factions of alpha, beta and coil within a chain
+    '''Get Phi and Psi angles per residue from a chain
     '''
+#     with open("/home/ec2-user/types.log", "a") as f:
+#         f.write("type: {0}\n".format(type(t[1])))
+    
     print("RUNNING", t[0])
     key = t[0]
-    structure = t[1]
+    structure = mmtfStructure.MmtfStructure(t[1].encode_data())
+    #structure = t[1]
+#     with open("/home/ec2-user/types.log", "a") as f:
+#         f.write("new type: {0}\n".format(type(structure)))
+    
+    
     if structure.num_chains != 1:
         raise Exception(
             "This method can only be applied to single polyer chain.")
 
+#     with open("/home/ec2-user/types.log", "a") as f:
+#         f.write("num_chains: {0}\n".format(structure.num_chains))
+        
     _pdbId, _chainId = key.split(".")
     _pdbId = _pdbId.lower()
+    
+#     with open("/home/ec2-user/types.log", "a") as f:
+#         f.write("pdbId: {0}\n".format(_pdbId))
 
     chainIndex = 0
     groupIndex = 0
     atomIndex = 0
     torsion = []
+    
+#     with open("/home/ec2-user/types.log", "a") as f:
+#         f.write("num_models: {0}\n".format(structure.num_models))
+    
+#    foo = 0
     for i in range(0, structure.num_models):
-        print("model: " + str(i+1))
+#        if foo == 0:
+        #print("model: " + str(i+1))
+#            foo = 1
+
+        with open("/home/ec2-user/types.log", "a") as f:
+            f.write("model: {0}\n".format(str(i+1)))
         for j in range(0, structure.chains_per_model[i]):
             chainName = structure.chain_name_list[chainIndex]
             chainId = structure.chain_id_list[chainIndex]
             groups = structure.groups_per_chain[chainIndex]
 
+#                 with open("/home/ec2-user/types.log", "a") as f:
+#                     f.write("chainName: {0}\n".format(chainName))
+#                     f.write("chainId: {0}\n".format(chainId))
+
             prev_coords = None
-            coords = None
+            #coords = None
             for k in range(0, structure.groups_per_chain[chainIndex]):
                 groupId = structure.group_id_list[groupIndex]
-                insertionCode = structure.ins_code_list[groupIndex]
+                #insertionCode = structure.ins_code_list[groupIndex]
                 secStruct = structure.sec_struct_list[groupIndex]
                 seqIndex = structure.sequence_index_list[groupIndex]
-
                 groupType = structure.group_type_list[groupIndex]
                 groupName = structure.group_list[groupType]["groupName"]
 
-                if coords is None:
-                    coords = {name.strip(): np.array((
-                        structure.x_coord_list[atomIndex+i],
-                        structure.y_coord_list[atomIndex+i],
-                        structure.z_coord_list[atomIndex+i])) \
-                            for i, name in enumerate(structure.group_list[groupType]["atomNameList"])}
+#                     with open("/home/ec2-user/types.log", "a") as f:
+#                         f.write("groupId: {0}\n".format(groupId))
+#                         f.write("groupType: {0}\n".format(groupType))
+#                         f.write("groupName: {0}\n".format(groupName))
+#                         #f.write("insertionCode: {0}\n".format(insertionCode))
+
+                coords = {name.strip(): np.array((
+                    structure.x_coord_list[atomIndex+i],
+                    structure.y_coord_list[atomIndex+i],
+                    structure.z_coord_list[atomIndex+i])) \
+                        for i, name in enumerate(structure.group_list[groupType]["atomNameList"])}
+
+#                     with open("/home/ec2-user/types.log", "a") as f:
+#                         f.write("coords was None, now is: {0}\n".format(coords))
+
                 atomIndex += len(structure.group_list[groupType]["atomNameList"])
+
+#                     with open("/home/ec2-user/types.log", "a") as f:
+#                         f.write("atomIndex: {0}\n".format(atomIndex))
 
                 try:
                     next_group_type = structure.group_type_list[groupIndex+1]
@@ -144,7 +183,16 @@ def _get_phi_psi(t):
                     next_coords = None
 
                 try:
-                    phi = get_dihedral(prev_coords["C"], coords["N"], coords["CA"], coords["C"]) if prev_coords else np.NaN
+                    if prev_coords:
+
+#                             with open("/home/ec2-user/types.log", "a") as f:
+#                                 f.write("prev_coords was true, prev_coords: {0}\n".format(prev_coords))
+
+                        phi = get_dihedral(prev_coords["C"], coords["N"], coords["CA"], coords["C"])  
+                    else:
+                        print(prev_coords)
+                        phi = np.NaN
+                    #phi = get_dihedral(prev_coords["C"], coords["N"], coords["CA"], coords["C"]) if prev_coords else np.NaN
                 except KeyError:
                     phi = np.NaN
                 try:
@@ -154,9 +202,14 @@ def _get_phi_psi(t):
 
                 prev_coords = coords
 
-                feats = [_pdbId, _chainId, int(seqIndex), str(groupName), float(phi), float(psi)]#+get_residue(groupName)
+                feats = Row(_pdbId, _chainId, int(seqIndex), str(groupName), float(phi), float(psi))#+get_residue(groupName)
                 torsion.append(feats)
                 groupIndex += 1
+
+#                     with open("/home/ec2-user/types.log", "a") as f:
+#                         #f.write("finally, torsion is: {0}\n".format(str(torsion)))
+#                         f.write("finally, coords is: {0}\n".format(coords))
+
             chainIndex += 1
 
     return torsion
